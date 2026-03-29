@@ -6,6 +6,8 @@
 
 #include <cstdint>
 
+#include "tag_files/tag_groups.h"
+
 /* ---------- constants */
 
 constexpr std::uintptr_t k_build_cache_file_add_tag_resources_address = 0x1408EA960ull;
@@ -28,6 +30,28 @@ struct c_cache_file_builder_tag_resource_output;
 struct c_allocation_base;
 struct dynamic_array;
 struct s_cache_file_tag_zone_manifest;
+
+struct s_cache_file_zone_resource_visit_node
+{
+	__int16 resource_owner_index;
+	__int16 pad;
+	// typed tag block with short type
+	s_tag_block child_node_indices;
+};
+
+struct s_cache_file_zone_resource_visit_node_block_struct
+{
+	int16_t parent_tag;
+	int16_t pad;
+	s_tag_block children;
+};
+
+struct s_cache_file_zone_resource_visit_node_link_block
+{
+	int16_t child_tag;
+};
+
+
 
 /* ---------- prototypes */
 
@@ -57,7 +81,7 @@ bool __fastcall build_cache_file_add_tag_resources(
 	c_allocation_base* allocation,
 	char optimize);
 
-char __fastcall sub_1408F5560(
+bool __fastcall prepare_zone_manifest(
 	dynamic_array* builder_manifests_array,
 	int builder_manifest_index,
 	s_cache_file_tag_zone_manifest* zone_manifest,

@@ -134,13 +134,21 @@ DWORD RunToolWithForwardedArguments(
     logging::Log(L"Starting target: " + tool_path);
     logging::Log(L"Arguments: " + tool_arguments);
 
+    const bool no_suspend_mode = (IsDebuggerPresent() == TRUE);
+    const DWORD creation_flags = no_suspend_mode ? 0 : CREATE_SUSPENDED;
+
+    if (no_suspend_mode)
+    {
+        logging::Log("Debugger detected; creating target in running state");
+    }
+
     const BOOL create_ok = CreateProcessW(
         tool_path.c_str(),
         mutable_command_line.data(),
         nullptr,
         nullptr,
         FALSE,
-        CREATE_SUSPENDED,
+        creation_flags,
         nullptr,
         tool_working_directory.wstring().c_str(),
         &startup_info,
@@ -154,7 +162,14 @@ DWORD RunToolWithForwardedArguments(
         return 2;
     }
 
-    logging::Log("Process created in suspended state");
+    if (no_suspend_mode)
+    {
+        logging::Log("Process created in running state");
+    }
+    else
+    {
+        logging::Log("Process created in suspended state");
+    }
 
     if (!InjectDll(process_info.hProcess, hook_dll_path))
     {
@@ -164,8 +179,11 @@ DWORD RunToolWithForwardedArguments(
         return 3;
     }
 
-    ResumeThread(process_info.hThread);
-    logging::Log("Resumed target main thread");
+    if (!no_suspend_mode)
+    {
+        ResumeThread(process_info.hThread);
+        logging::Log("Resumed target main thread");
+    }
 
     WaitForSingleObject(process_info.hProcess, INFINITE);
 

@@ -2,9 +2,12 @@
 
 #include "cache/cache_file_builder_tag_resource_manager.h"
 #include "cseries/cseries.h"
+#include "cseries/cseries_asserts.h"
+#include "cseries/cseries_macros.h"
 
 #include "common/logging.h"
 #include "memory/array.h"
+#include "memory/bitvector.h"
 #include "memory/module.h"
 #include "tag_files/tag_groups.h"
 #include "tag_files/tag_resource_internals.h"
@@ -13,14 +16,19 @@
 #include <cstddef>
 #include <cstdint>
 #include <sstream>
+#include <map>
 
 /* ---------- constants */
 
 struct s_cache_file_tag_zone_manifest;
+constexpr uns32 k_tag_resource_definition_table_rva =
+	static_cast<uns32>(0x15877A5D0ull - 0x140000000ull);
+
+static uns64* resource_definitions_base = reinterpret_cast<uns64*>(global_address_get(k_tag_resource_definition_table_rva));
 
 /* ---------- prototypes */
 
-char __fastcall sub_1408F5560(
+bool __fastcall prepare_zone_manifest(
 	dynamic_array* builder_manifests_array,
 	int builder_manifest_index,
 	s_cache_file_tag_zone_manifest* zone_manifest,
@@ -30,16 +38,9 @@ char __fastcall sub_1408F5560(
 /* ---------- hooks */
 
 HOOK_DECLARE(0x1408EA960ull, build_cache_file_add_tag_resources);
-HOOK_DECLARE(0x1408F5560ull, sub_1408F5560);
+HOOK_DECLARE(0x1408F5560ull, prepare_zone_manifest);
 
 /* ---------- definitions */
-
-struct s_tag_block
-{
-	int count;
-	int address;
-	int definition;
-};
 
 struct s_cache_file_tag_resources_bitvector
 {
@@ -83,6 +84,7 @@ struct s_cache_file_tag_zone_manifest
 	s_tag_block attachment_hierarchy;
 };
 
+// Makes the map the correct size.
 struct s_builder_manifest
 {
 	std::uint32_t name;
@@ -91,32 +93,8 @@ struct s_builder_manifest
 	dynamic_array tag_resources;
 	dynamic_array cleared_resources;
 	dynamic_array top_level_resource_owners;
-	s_attachment_hierarchy_tree_node* attachment_hierarchy_tree;
-	std::byte unknown50[0x08];
+    std::multimap<uns32, uns16> attachment_heirarchy_tree;
 };
-
-static_assert(sizeof(s_tag_block) == 0x0C);
-static_assert(sizeof(s_attachment_hierarchy_entry) == 0x10);
-static_assert(offsetof(s_builder_manifest, active_resource_owners) == 0x08);
-static_assert(offsetof(s_builder_manifest, tag_resources) == 0x18);
-static_assert(offsetof(s_builder_manifest, cleared_resources) == 0x28);
-static_assert(offsetof(s_builder_manifest, top_level_resource_owners) == 0x38);
-static_assert(offsetof(s_builder_manifest, attachment_hierarchy_tree) == 0x48);
-static_assert(sizeof(s_builder_manifest) == 0x58);
-static_assert(offsetof(s_cache_file_tag_zone_manifest, required_resource_bitvector) == 0x00);
-static_assert(offsetof(s_cache_file_tag_zone_manifest, deferred_resource_bitvector) == 0x0C);
-static_assert(offsetof(s_cache_file_tag_zone_manifest, optional_resource_bitvector) == 0x18);
-static_assert(offsetof(s_cache_file_tag_zone_manifest, streamed_resource_bitvector) == 0x24);
-static_assert(offsetof(s_cache_file_tag_zone_manifest, required_resource_size) == 0x30);
-static_assert(offsetof(s_cache_file_tag_zone_manifest, deferred_required_size) == 0x34);
-static_assert(offsetof(s_cache_file_tag_zone_manifest, optional_resource_size) == 0x38);
-static_assert(offsetof(s_cache_file_tag_zone_manifest, streamed_resource_size) == 0x3C);
-static_assert(offsetof(s_cache_file_tag_zone_manifest, dvd_in_memory_resource_size) == 0x40);
-static_assert(offsetof(s_cache_file_tag_zone_manifest, name) == 0x44);
-static_assert(offsetof(s_cache_file_tag_zone_manifest, resource_usage) == 0x48);
-static_assert(offsetof(s_cache_file_tag_zone_manifest, active_resource_owners) == 0x54);
-static_assert(offsetof(s_cache_file_tag_zone_manifest, top_level_resource_owners) == 0x60);
-static_assert(offsetof(s_cache_file_tag_zone_manifest, attachment_hierarchy) == 0x6C);
 
 /* ---------- prototypes */
 
@@ -179,7 +157,9 @@ bool __fastcall build_cache_file_add_tag_resources(
 	return result;
 }
 
-char __fastcall sub_1408F5560(
+// prepares zone manifest block except sizes and resource usage.
+// located at 1408F5560 in h3ek
+bool __fastcall prepare_zone_manifest(
 	dynamic_array* builder_manifests_array,
 	int builder_manifest_index,
 	s_cache_file_tag_zone_manifest* zone_manifest,
@@ -196,15 +176,179 @@ char __fastcall sub_1408F5560(
 		<< " maximum_tag_instances_count=" << maximum_tag_instances_count;
 	logging::Log(before_stream.str());
 
-	char result = 0;
-	HOOK_INVOKE(
-		result,
-		sub_1408F5560,
-		builder_manifests_array,
-		builder_manifest_index,
-		zone_manifest,
-		resources_count,
-		maximum_tag_instances_count);
+	bool result = false;
+
+	// HOOK_INVOKE(
+	// 	result,
+	// 	sub_1408F5560,
+	// 	builder_manifests_array,
+	// 	builder_manifest_index,
+	// 	zone_manifest,
+	// 	resources_count,
+	// 	maximum_tag_instances_count);
+
+    // ===============================================
+
+    s_builder_manifest* builder_manifest = static_cast<s_builder_manifest*>(
+        dynamic_array_get_element(builder_manifests_array, builder_manifest_index, sizeof(s_builder_manifest)));
+    
+    // How many 32-bit words we need to store the bitvectors for the provided resource count.
+    int resource_bitvector_word_count = (resources_count + 31) / 32;
+
+    // Resize bitvector tag blocks, these each store a 32 bit word bitvector.
+    tag_block_resize(&zone_manifest->required_resource_bitvector, resource_bitvector_word_count);
+    tag_block_resize(&zone_manifest->optional_resource_bitvector, resource_bitvector_word_count);
+    tag_block_resize(&zone_manifest->streamed_resource_bitvector, resource_bitvector_word_count);
+
+    csmemset(tag_block_get_range_with_size(&zone_manifest->required_resource_bitvector, 0, resource_bitvector_word_count, 4), 0, resource_bitvector_word_count * 4);
+    csmemset(tag_block_get_range_with_size(&zone_manifest->optional_resource_bitvector, 0, resource_bitvector_word_count, 4), 0, resource_bitvector_word_count * 4);
+    csmemset(tag_block_get_range_with_size(&zone_manifest->streamed_resource_bitvector, 0, resource_bitvector_word_count, 4), 0, resource_bitvector_word_count * 4);
+
+    zone_manifest->name = builder_manifest->name;
+
+    for (uns32 tag_resource_index = 0; tag_resource_index < builder_manifest->tag_resources.count; tag_resource_index++)
+    {
+        s_tag_resource* tag_resource = static_cast<s_tag_resource*>(
+            dynamic_array_get_element(&builder_manifest->tag_resources, tag_resource_index, sizeof(s_tag_resource)));
+        
+        if (!tag_resource_not_empty(tag_resource))
+            continue;
+
+        const uns32 resource_handle = tag_resource->resource_handle;
+        const uns16 resource_index = static_cast<uns16>(tag_resource->resource_handle);
+        const uns32 definition_ptr = tag_resource->definition_ptr;
+
+        ASSERT(definition_ptr != NONE);
+        if (definition_ptr == NULL)
+        {
+            continue;
+        }
+
+        // 32 -> 64 bit definition pointer logic may be PC/Durango only
+        s_tag_resource_definition* resource_definition = reinterpret_cast<s_tag_resource_definition*>((*resource_definitions_base) + (tag_resource->definition_ptr * 4ull));
+
+        if (resource_definition->required(resource_definition))
+        {
+            bitvector_set_bit(
+                reinterpret_cast<uns32*>(tag_block_get_range_with_size(&zone_manifest->required_resource_bitvector, 0, zone_manifest->required_resource_bitvector.count, 4)),
+                resource_index);
+        }
+
+        if (resource_definition->optional(resource_definition))
+        {
+            bitvector_set_bit(
+                reinterpret_cast<uns32*>(tag_block_get_range_with_size(&zone_manifest->optional_resource_bitvector, 0, zone_manifest->optional_resource_bitvector.count, 4)),
+                resource_index);
+        }
+
+        if (resource_definition->streamed(resource_definition))
+        {
+            bitvector_set_bit(
+                reinterpret_cast<uns32*>(tag_block_get_range_with_size(&zone_manifest->streamed_resource_bitvector, 0, zone_manifest->streamed_resource_bitvector.count, 4)),
+                resource_index);
+        }  
+    }
+
+    for (int cleared_resource_index = 0; cleared_resource_index < builder_manifest->cleared_resources.count; cleared_resource_index++)
+    {
+        s_tag_resource* cleared_resource = static_cast<s_tag_resource*>(
+            dynamic_array_get_element(&builder_manifest->cleared_resources, cleared_resource_index, sizeof(s_tag_resource)));
+
+        if (!tag_resource_not_empty(cleared_resource))
+            continue;
+
+        const uns32 resource_handle = cleared_resource->resource_handle;
+        const uns16 resource_index = static_cast<uns16>(cleared_resource->resource_handle);
+
+        bitvector_clear_bit(
+            reinterpret_cast<uns32*>(tag_block_get_range_with_size(&zone_manifest->required_resource_bitvector, 0, zone_manifest->required_resource_bitvector.count, 4)),
+            resource_index);
+        bitvector_clear_bit(
+            reinterpret_cast<uns32*>(tag_block_get_range_with_size(&zone_manifest->optional_resource_bitvector, 0, zone_manifest->optional_resource_bitvector.count, 4)),
+            resource_index);
+        bitvector_clear_bit(
+            reinterpret_cast<uns32*>(tag_block_get_range_with_size(&zone_manifest->streamed_resource_bitvector, 0, zone_manifest->streamed_resource_bitvector.count, 4)),
+            resource_index);
+    }
+
+    const uns32 owner_word_count = (maximum_tag_instances_count + 31) / 32;
+
+    tag_block_resize(&zone_manifest->active_resource_owners, owner_word_count);
+    tag_block_resize(&zone_manifest->top_level_resource_owners, owner_word_count);
+
+    csmemset(reinterpret_cast<uns32*>(tag_block_get_range_with_size(&zone_manifest->active_resource_owners, 0, zone_manifest->active_resource_owners.count, 4)), 0, owner_word_count * 4);
+    csmemset(reinterpret_cast<uns32*>(tag_block_get_range_with_size(&zone_manifest->top_level_resource_owners, 0, zone_manifest->top_level_resource_owners.count, 4)), 0, owner_word_count * 4);
+
+    for (int active_resource_owner_index = 0; active_resource_owner_index < builder_manifest->active_resource_owners.count; active_resource_owner_index++)
+    {
+        uns32 owner_handle = *static_cast<uns32*>(
+            dynamic_array_get_element(&builder_manifest->active_resource_owners, active_resource_owner_index, sizeof(uns32)));
+        uns16 owner_index = static_cast<uns16>(owner_handle);
+
+        bitvector_set_bit(
+            reinterpret_cast<uns32*>(tag_block_get_range_with_size(&zone_manifest->active_resource_owners, 0, zone_manifest->active_resource_owners.count, 4)),
+            owner_index);
+    }
+
+    for (int top_level_resource_owner_index = 0; top_level_resource_owner_index < builder_manifest->top_level_resource_owners.count; top_level_resource_owner_index++)
+    {
+        uns32 owner_handle = *static_cast<uns32*>(
+            dynamic_array_get_element(&builder_manifest->top_level_resource_owners, top_level_resource_owner_index, sizeof(uns32)));
+        uns16 owner_index = static_cast<uns16>(owner_handle);
+
+        bitvector_set_bit(
+            reinterpret_cast<uns32*>(tag_block_get_range_with_size(&zone_manifest->top_level_resource_owners, 0, zone_manifest->top_level_resource_owners.count, 4)),
+            owner_index);
+    }
+
+    auto& attachment_hierarchy_tagblock = zone_manifest->attachment_hierarchy;
+    std::multimap<uns32, uns16> const& attachment_hierarchy_tree = builder_manifest->attachment_heirarchy_tree;
+
+    tag_block_resize(&attachment_hierarchy_tagblock, maximum_tag_instances_count);
+
+    s_data_iterator resource_iterator;
+    data_iterator_begin_sub_1407BC980(&resource_iterator, (void*)NONE);
+
+    uns32 resource_handle;
+    while ((resource_handle = data_iterator_next_sub_1407BC9C0(&resource_iterator)) != NONE)
+    {
+        uns16 resource_index = static_cast<uns16>(resource_handle);
+        assert(VALID_INDEX(resource_index, attachment_hierarchy_tagblock.count));
+
+        s_cache_file_zone_resource_visit_node* visit_node = &reinterpret_cast<s_cache_file_zone_resource_visit_node*>(
+            tag_block_get_range_with_size(
+                &attachment_hierarchy_tagblock,
+                0,
+                attachment_hierarchy_tagblock.count,
+                static_cast<int>(sizeof(s_cache_file_zone_resource_visit_node))
+            ))[resource_index];
+
+        visit_node->resource_owner_index = resource_index;
+
+        auto range = attachment_hierarchy_tree.equal_range(resource_handle);
+        for (auto current_node = range.first; current_node != range.second; ++current_node)
+        {
+            assert(VALID_INDEX(resource_index, attachment_hierarchy_tagblock.count));
+
+            uns32 new_index = static_cast<uns32>(tag_block_add_element(&visit_node->child_node_indices));
+
+            assert(VALID_INDEX(static_cast<int>(new_index), visit_node->child_node_indices.count));
+
+            s_cache_file_zone_resource_visit_node_link_block* node_link = &reinterpret_cast<s_cache_file_zone_resource_visit_node_link_block*>(
+                tag_block_get_range_with_size(
+                    &visit_node->child_node_indices,
+                    static_cast<int>(new_index),
+                    1,
+                    static_cast<int>(sizeof(s_cache_file_zone_resource_visit_node_link_block))
+                ))[0];
+
+            node_link->child_tag = current_node->second;
+        }
+    }
+
+    result = true;
+
+    // ===============================================
 
 	std::ostringstream after_stream;
 	after_stream << "sub_1408F5560 end"

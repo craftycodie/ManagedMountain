@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cseries/types.h"
+#include "cseries/constants.h"
 
 #include <cstdarg>
 #include <cstddef>

@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <cstdlib>
 #include <vector>
 
 namespace
@@ -223,14 +224,23 @@ int wmain(int argc, wchar_t** argv)
     logging::Initialize(L"tool_hook_tests");
     logging::Log(L"tests log path: " + logging::GetLogPath().wstring());
 
-    if (argc < 2 || argv[1] == nullptr || argv[1][0] == L'\0')
+    std::filesystem::path tool_root;
+    if (argc >= 2 && argv[1] != nullptr && argv[1][0] != L'\0')
+    {
+        tool_root = std::filesystem::path(argv[1]).lexically_normal();
+    }
+    else if (const wchar_t* env_h3ek_root = _wgetenv(L"H3EK_ROOT"); env_h3ek_root != nullptr && env_h3ek_root[0] != L'\0')
+    {
+        tool_root = std::filesystem::path(env_h3ek_root).lexically_normal();
+    }
+
+    if (tool_root.empty())
     {
         std::wcerr << L"Usage: tool_hook_tests <path to H3EK directory (folder containing tool.exe)>\n";
+        std::wcerr << L"Or set environment variable H3EK_ROOT.\n";
         logging::Shutdown();
         return 1;
     }
-
-    const std::filesystem::path tool_root = std::filesystem::path(argv[1]).lexically_normal();
     const std::filesystem::path tool_exe = tool_root / L"tool.exe";
 
     if (!std::filesystem::is_directory(tool_root))
