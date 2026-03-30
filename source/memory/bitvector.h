@@ -13,8 +13,9 @@
 
 /* ---------- prototypes */
 
-void bitvector_set_bit(uns32* words, uns32 index);
-void bitvector_clear_bit(uns32* words, uns32 index);
+// IDA: ?bit_vector_not_and@@YAXJPEBK0PEAK@Z - per word: acc_out[i] = acc_in[i] & ~mask_bits[i].
+// bit_count is a multiple of 32 in all H3EK call sites (32 * tag_block.count).
+void bit_vector_not_and(uns32 bit_count, uns32 const* mask_bits, uns32 const* acc_in, uns32* acc_out);
 
 /* ---------- globals */
 

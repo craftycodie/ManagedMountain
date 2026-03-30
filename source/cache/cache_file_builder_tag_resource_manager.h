@@ -12,8 +12,22 @@
 
 constexpr std::uintptr_t k_build_cache_file_add_tag_resources_address = 0x1408EA960ull;
 constexpr std::uintptr_t k_sub_1408F5560_address = 0x1408F5560ull;
+constexpr std::uintptr_t k_sub_1408F7750_address = 0x1408F7750ull;
+
+constexpr int k_cache_file_tag_zone_manifest_element_bytes = 120;
+constexpr int k_in_out_used_resources_dword_count = 2048;
 
 /* ---------- definitions */
+
+// IDA sub_1408F7750: first 2 bytes unused; bit_count at +2 (see *(char* + 2)); then 2048 DWORD payload.
+#pragma pack(push, 1)
+struct s_in_out_used_resources
+{
+	std::uint8_t header_skip[2];
+	std::int32_t bit_count;
+	std::uint32_t dwords[k_in_out_used_resources_dword_count];
+};
+#pragma pack(pop)
 
 namespace i343
 {
@@ -30,6 +44,7 @@ struct c_cache_file_builder_tag_resource_output;
 struct c_allocation_base;
 struct dynamic_array;
 struct s_cache_file_tag_zone_manifest;
+class c_wrapped_flags;
 
 struct s_cache_file_zone_resource_visit_node
 {
@@ -68,6 +83,7 @@ using build_cache_file_add_tag_resources_fn = bool(__fastcall*)(
 	c_allocation_base* allocation,
 	char optimize);
 
+// Name and signature confirmed.
 bool __fastcall build_cache_file_add_tag_resources(
 	int cache_file_version,
 	const i343::HaloMapId* map_id,
@@ -81,10 +97,17 @@ bool __fastcall build_cache_file_add_tag_resources(
 	c_allocation_base* allocation,
 	char optimize);
 
-bool __fastcall prepare_zone_manifest(
+bool __fastcall add_resource_usage_to_zone_manifest(
 	dynamic_array* builder_manifests_array,
 	int builder_manifest_index,
 	s_cache_file_tag_zone_manifest* zone_manifest,
+	int resources_count,
+	unsigned int maximum_tag_instances_count);
+
+bool __fastcall build_zone_manifest_resource_usage(
+	c_wrapped_flags* in_out_used_resources,
+	dynamic_array* builder_manifests_array,
+	s_tag_block* manifests_tag_block,
 	int resources_count,
 	unsigned int maximum_tag_instances_count);
 

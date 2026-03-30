@@ -3,7 +3,7 @@
 #include "memory/bitvector.h"
 
 #include "cseries/cseries.h"
-#include "tag_files/tag_groups.h"
+#include "memory/module.h"
 
 /* ---------- constants */
 
@@ -11,22 +11,17 @@
 
 /* ---------- prototypes */
 
+/* ---------- hooks*/
+
+HOOK_DECLARE(0x1408BFB00ull, bit_vector_not_and);
+
 /* ---------- globals */
 
 /* ---------- public code */
 
-void bitvector_set_bit(uns32* words, uns32 index)
+void bit_vector_not_and(uns32 bit_count, uns32 const* mask_bits, uns32 const* acc_in, uns32* acc_out)
 {
-	// 32 bits in a word
-	// Shifting going on here for efficiency
-	// 5 = (32 / 8) + 1
-	// 31 = 32 - 1
-	words[index >> 5] |= (1u << (index & 31));
-}
-
-void bitvector_clear_bit(uns32* words, uns32 index)
-{
-	words[index >> 5] &= ~(1u << (index & 31));
+	HOOK_INVOKE_VOID(bit_vector_not_and, bit_count, mask_bits, acc_in, acc_out);
 }
 
 /* ---------- private code */

@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(tool_hook_harness LANGUAGES CXX)
+enable_testing()
+set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT run_tool_hook_tests)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -8,6 +10,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(MSVC)
     add_compile_options(/W4 /EHsc /permissive-)
+    # Match release STL iterator checks across all TUs / static libs (avoids _ITERATOR_DEBUG_LEVEL mismatch LNK2038).
+    add_compile_definitions(_ITERATOR_DEBUG_LEVEL=0)
 endif()
 
 set(THH_OUTPUT_DIR "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
@@ -88,6 +92,8 @@ target_link_libraries(tool_hook_tests PRIVATE common)
 
 set_target_properties(tool_hook_tests PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${THH_OUTPUT_DIR}"
+    VS_DEBUGGER_WORKING_DIRECTORY "${THH_OUTPUT_DIR}"
+    VS_DEBUGGER_ENVIRONMENT "H3EK_ROOT=C:\\Program Files (x86)\\Steam\\steamapps\\common\\H3EK"
 )
 
 add_library(tool_hook SHARED
@@ -100,8 +106,12 @@ add_library(tool_hook SHARED
     source/cseries/cseries_asserts.h
     source/memory/array.cpp
     source/memory/array.h
+    source/memory/bitvector.cpp
+    source/memory/bitvector.h
     source/memory/module.cpp
     source/memory/module.h
+    source/memory/wrapped_arrays.cpp
+    source/memory/wrapped_arrays.h
     source/tag_files/tag_groups.cpp
     source/tag_files/tag_groups.h
     source/tag_files/tag_resource_internals.cpp
@@ -125,3 +135,14 @@ set_target_properties(tool_hook PROPERTIES
 )
 
 add_dependencies(tool_hook_tests tool_launcher tool_hook)
+
+add_custom_target(run_tool_hook_tests
+    COMMAND "$<TARGET_FILE:tool_hook_tests>"
+    DEPENDS tool_hook_tests
+    WORKING_DIRECTORY "${THH_OUTPUT_DIR}"
+    COMMENT "Running tool_hook_tests"
+)
+
+add_test(NAME tool_hook_harness_build_cache
+    COMMAND tool_hook_tests
+)

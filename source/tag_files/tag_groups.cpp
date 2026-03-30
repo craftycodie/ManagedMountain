@@ -13,7 +13,6 @@
 
 /* ---------- prototypes (before HOOK_DECLARE) */
 
-struct s_tag_block;
 struct s_data_iterator;
 
 bool __fastcall tag_block_resize(s_tag_block* tag_block, int count);
