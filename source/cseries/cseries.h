@@ -16,6 +16,7 @@
 
 #define csmemcpy std::memcpy
 #define csmemset std::memset
+#define csmemcmp std::memcmp
 
 inline void csstrnzcpy(char* const dest, char const* const src, uns64 const dest_size_bytes)
 {

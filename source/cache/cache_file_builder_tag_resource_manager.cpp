@@ -44,6 +44,7 @@ HOOK_DECLARE(0x1408EA960ull, build_cache_file_add_tag_resources);
 HOOK_DECLARE(0x1408F5560ull, add_resource_usage_to_zone_manifest);
 HOOK_DECLARE(0x1408F7750ull, build_zone_manifest_resource_usage);
 HOOK_DECLARE(0x1408F3610ull, get_or_create_shared_file_index);
+HOOK_DECLARE(0x1408F2E30ull, get_or_create_codec_definition_index);
 
 /* ---------- definitions */
 
@@ -245,6 +246,61 @@ int32 __fastcall get_or_create_shared_file_index(
 	// logging::Log(after_stream.str());
 
 	return index;
+}
+
+void __fastcall get_or_create_codec_definition_index(
+	s_cache_file_resource_gestalt* resource_gestalt,
+	c_cache_file_builder_codec* cache_file_builder_codec,
+	int8* out_codec_index)
+{
+	ASSERT(out_codec_index != nullptr);
+
+	if (cache_file_builder_codec == nullptr)
+	{
+		*out_codec_index = static_cast<int8>(-1);
+		return;
+	}
+
+	s_cache_file_codec_definition requested{};
+	requested.identifier = cache_file_builder_codec->get_identifier();
+
+	s_tag_block* const codec_definitions_block = reinterpret_cast<s_tag_block*>(&resource_gestalt->codec_definitions);
+	int const count = codec_definitions_block->count;
+	s_cache_file_codec_definition* rows = reinterpret_cast<s_cache_file_codec_definition*>(
+		tag_block_get_range_with_size(
+			codec_definitions_block,
+			0,
+			count,
+			static_cast<int>(sizeof(s_cache_file_codec_definition))));
+
+	int found_index = -1;
+	for (int i = 0; i < count; ++i)
+	{
+		if (csmemcmp(&rows[i], &requested, sizeof(s_cache_file_codec_definition)) == 0)
+		{
+			found_index = i;
+			break;
+		}
+	}
+
+	if (found_index >= 0)
+	{
+		*out_codec_index = static_cast<int8>(found_index);
+		return;
+	}
+
+	int const new_index = tag_block_add_element(codec_definitions_block);
+	ASSERT(VALID_INDEX(new_index, codec_definitions_block->count));
+
+	rows = reinterpret_cast<s_cache_file_codec_definition*>(
+		tag_block_get_range_with_size(
+			codec_definitions_block,
+			0,
+			codec_definitions_block->count,
+			static_cast<int>(sizeof(s_cache_file_codec_definition))));
+
+	rows[new_index] = requested;
+	*out_codec_index = static_cast<int8>(new_index);
 }
 
 // Adds resource usage to a zone manifest block (bitvectors and attachment hierarchy) and returns a bitvector of used resources.

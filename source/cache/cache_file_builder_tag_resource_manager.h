@@ -8,6 +8,7 @@
 #include <map>
 
 #include "cache/cache_file_builder_writer.h"
+#include "cache/cache_file_uncompressed_codec.h"
 #include "cseries/types.h"
 #include "tag_files/tag_groups.h"
 
@@ -17,6 +18,7 @@ constexpr uns64 k_build_cache_file_add_tag_resources_address = 0x1408EA960ull;
 constexpr uns64 k_sub_1408F5560_address = 0x1408F5560ull;
 constexpr uns64 k_sub_1408F7750_address = 0x1408F7750ull;
 constexpr uns64 k_get_or_create_shared_file_index_address = 0x1408F3610ull;
+constexpr uns64 k_get_or_create_codec_definition_index_address = 0x1408F2E30ull;
 
 constexpr int k_cache_file_tag_zone_manifest_element_bytes = 120;
 
@@ -42,6 +44,8 @@ class c_wrapped_flags;
 struct s_cache_file_zone_resource_visit_node;
 struct s_cache_file_zone_resource_visit_node_block_struct;
 struct s_cache_file_zone_resource_visit_node_link_block;
+
+struct s_cache_file_resource_gestalt;
 
 struct s_tag_resource_cache_file_location
 {
@@ -105,6 +109,12 @@ int32 __fastcall get_or_create_shared_file_index(
 	s_unknown_struct_shared_file_cache& context,
 	s_tag_resource_cache_file_location* location,
 	uns32 key);
+
+// H3EK 0x1408F2E30: look up 16-byte codec id in gestalt->codec_definitions, append if missing; else out = -1.
+void __fastcall get_or_create_codec_definition_index(
+	s_cache_file_resource_gestalt* resource_gestalt,
+	c_cache_file_builder_codec* cache_file_builder_codec,
+	int8* out_codec_index);
 
 /* ---------- globals */
 

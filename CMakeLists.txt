@@ -114,6 +114,7 @@ add_library(tool_hook SHARED
     source/cache/cache_file_builder_tag_resource_manager.cpp
     source/cache/cache_file_builder_tag_resource_manager.h
     source/cache/cache_file_builder_writer.h
+    source/cache/cache_file_uncompressed_codec.h
     source/cseries/cseries_asserts.cpp
     source/cseries/cseries_asserts.h
     source/memory/array.cpp
