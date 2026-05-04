@@ -2,7 +2,8 @@
 
 #include <Windows.h>
 
-#include <cstdint>
+#include "cseries/types.h"
+
 #include <string_view>
 
 namespace hooks
@@ -10,13 +11,13 @@ namespace hooks
 bool InstallAll();
 void RemoveAll();
 
-constexpr std::uintptr_t kToolImageBase = 0x140000000ull;
+constexpr uns64 kToolImageBase = 0x140000000ull;
 
-constexpr std::uintptr_t AddressToRva(std::uintptr_t address)
+constexpr uns64 AddressToRva(uns64 address)
 {
 	return address >= kToolImageBase ? address - kToolImageBase : address;
 }
 
-void* ResolveTargetByRva(HMODULE module, std::uintptr_t rva);
+void* ResolveTargetByRva(HMODULE module, uns64 rva);
 void* ResolveTargetByPattern(HMODULE module, std::string_view pattern);
 }

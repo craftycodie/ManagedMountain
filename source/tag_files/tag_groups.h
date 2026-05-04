@@ -4,7 +4,7 @@
 
 /* ---------- headers */
 
-#include <cstdint>
+#include "cseries/types.h"
 
 /* ---------- constants */
 
@@ -12,7 +12,7 @@
 
 struct s_data_iterator
 {
-	std::uint64_t opaque[12];
+	uns64 opaque[12];
 };
 
 struct s_tag_block
@@ -21,6 +21,18 @@ struct s_tag_block
 	int address;
 	int definition;
 };
+
+struct s_tag_data_definition;
+
+struct s_tag_data
+{
+	int size;
+	int internal_flags;
+	int file_offset;
+	int address;
+	int definition;
+};
+static_assert(sizeof(s_tag_data) == 20);
 
 /* ---------- prototypes */
 

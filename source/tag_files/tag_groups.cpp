@@ -1,6 +1,7 @@
 /* ---------- headers */
 
 #include "tag_files/tag_groups.h"
+#include "tag_files/tag_group_access.h"
 
 #include "common/logging.h"
 #include "memory/module.h"
@@ -28,6 +29,7 @@ HOOK_DECLARE(0x1407B8370ull, tag_block_get_range_with_size);
 HOOK_DECLARE(0x1407B7970ull, tag_block_add_element);
 HOOK_DECLARE(0x1407BC980ull, data_iterator_begin_sub_1407BC980);
 HOOK_DECLARE(0x1407BC9C0ull, data_iterator_next_sub_1407BC9C0);
+HOOK_DECLARE(k_tag_get_address, tag_get);
 
 /* ---------- definitions */
 
@@ -87,6 +89,13 @@ int __fastcall data_iterator_next_sub_1407BC9C0(s_data_iterator* iterator)
 
 	int result = 0;
 	HOOK_INVOKE(result, data_iterator_next_sub_1407BC9C0, iterator);
+	return result;
+}
+
+void* __fastcall tag_get(void* key, uns32 index)
+{
+	void* result = nullptr;
+	HOOK_INVOKE(result, tag_get, key, index);
 	return result;
 }
 

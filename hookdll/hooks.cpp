@@ -8,7 +8,8 @@
 
 #include <Psapi.h>
 
-#include <cstdint>
+#include "cseries/types.h"
+
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -176,14 +177,14 @@ void RemoveAll()
 	apply_all_patches(true);
 }
 
-void* ResolveTargetByRva(HMODULE module, std::uintptr_t rva)
+void* ResolveTargetByRva(HMODULE module, uns64 rva)
 {
 	if (module == nullptr)
 	{
 		return nullptr;
 	}
 
-	return reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(module) + rva);
+	return reinterpret_cast<void*>(reinterpret_cast<uns64>(module) + rva);
 }
 
 void* ResolveTargetByPattern(HMODULE module, std::string_view pattern)
@@ -205,22 +206,22 @@ void* ResolveTargetByPattern(HMODULE module, std::string_view pattern)
 		return nullptr;
 	}
 
-	const auto* module_bytes = static_cast<const std::uint8_t*>(module_info.lpBaseOfDll);
-	const std::size_t image_size = static_cast<std::size_t>(module_info.SizeOfImage);
-	const std::size_t pattern_size = parsed_pattern.size();
+	const auto* module_bytes = static_cast<byte const*>(module_info.lpBaseOfDll);
+	const uns64 image_size = static_cast<uns64>(module_info.SizeOfImage);
+	const uns64 pattern_size = parsed_pattern.size();
 
 	if (image_size < pattern_size)
 	{
 		return nullptr;
 	}
 
-	for (std::size_t i = 0; i <= image_size - pattern_size; ++i)
+	for (uns64 i = 0; i <= image_size - pattern_size; ++i)
 	{
 		bool matched = true;
-		for (std::size_t j = 0; j < pattern_size; ++j)
+		for (uns64 j = 0; j < pattern_size; ++j)
 		{
 			const int wanted = parsed_pattern[j];
-			if (wanted != -1 && module_bytes[i + j] != static_cast<std::uint8_t>(wanted))
+			if (wanted != -1 && module_bytes[i + j] != static_cast<byte>(wanted))
 			{
 				matched = false;
 				break;
@@ -229,7 +230,7 @@ void* ResolveTargetByPattern(HMODULE module, std::string_view pattern)
 
 		if (matched)
 		{
-			return const_cast<std::uint8_t*>(module_bytes + i);
+			return const_cast<byte*>(module_bytes + i);
 		}
 	}
 

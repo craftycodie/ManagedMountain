@@ -2,12 +2,13 @@
 
 #include "cseries/cseries.h"
 
-#include <cstdint>
-
-#define HOOK_DECLARE_CALL_WITH_ADDRESS(ADDR, ADDR2, NAME) inline static c_hook_call CONCAT(NAME##_hook,__LINE__)(#NAME, ADDR, { .address = ADDR2 })
-#define HOOK_DECLARE_CALL(ADDR, NAME) inline static c_hook_call CONCAT(NAME##_hook,__LINE__)(#NAME, ADDR, { .pointer = reinterpret_cast<void*>(&NAME) })
-#define HOOK_DECLARE(ADDR, NAME) static c_hook NAME##_hook(#NAME, ADDR, { .pointer = reinterpret_cast<void*>(&NAME) })
-#define HOOK_DECLARE_CLASS(ADDR, CLASS, NAME) static c_hook CLASS##_##NAME##_hook(#NAME, ADDR, { .pointer = reinterpret_cast<void*>(&CLASS::NAME) })
+#define HOOK_DECLARE_CALL_WITH_ADDRESS(ADDR, ADDR2, NAME) \
+	inline static c_hook_call CONCAT(NAME##_hook, __LINE__)(#NAME, ADDR, module_address_from_address(static_cast<uns64>(ADDR2)))
+#define HOOK_DECLARE_CALL(ADDR, NAME) \
+	inline static c_hook_call CONCAT(NAME##_hook, __LINE__)(#NAME, ADDR, module_address_from_pointer(reinterpret_cast<void*>(&NAME)))
+#define HOOK_DECLARE(ADDR, NAME) static c_hook NAME##_hook(#NAME, ADDR, module_address_from_pointer(reinterpret_cast<void*>(&NAME)))
+#define HOOK_DECLARE_CLASS(ADDR, CLASS, NAME) \
+	static c_hook CLASS##_##NAME##_hook(#NAME, ADDR, module_address_from_pointer(reinterpret_cast<void*>(&CLASS::NAME)))
 
 // Call the trampoline from Detours (get_original_pointer after attach). Do not Detach/Attach per call.
 #define HOOK_INVOKE(RESULT, NAME, ...) \
@@ -34,6 +35,20 @@ union module_address
 	void* pointer;
 };
 
+inline module_address module_address_from_pointer(void* const p) noexcept
+{
+	module_address u{};
+	u.pointer = p;
+	return u;
+}
+
+inline module_address module_address_from_address(uns64 const addr) noexcept
+{
+	module_address u{};
+	u.address = addr;
+	return u;
+}
+
 extern module_address global_module;
 extern void* global_address_get(uns32 rva);
 
@@ -46,7 +61,7 @@ extern void apply_all_patches(bool revert);
 class c_hook
 {
 public:
-	c_hook(const char* name, std::uintptr_t address, module_address const function, bool remove_base = true);
+	c_hook(const char* name, uns64 address, module_address const function, bool remove_base = true);
 
 	bool apply(bool revert);
 
@@ -83,7 +98,7 @@ class c_hook_call
 #pragma pack(pop)
 
 public:
-	c_hook_call(const char* name, std::uintptr_t address, module_address const function, bool remove_base = true);
+	c_hook_call(const char* name, uns64 address, module_address const function, bool remove_base = true);
 
 	bool apply(bool revert);
 
@@ -107,7 +122,7 @@ private:
 class c_data_patch
 {
 public:
-	c_data_patch(const char* name, std::uintptr_t address, int32 patch_size, byte const(&patch)[], bool remove_base = true);
+	c_data_patch(const char* name, uns64 address, int32 patch_size, byte const(&patch)[], bool remove_base = true);
 
 	bool apply(bool revert);
 

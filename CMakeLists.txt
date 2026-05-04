@@ -1,8 +1,19 @@
 cmake_minimum_required(VERSION 3.20)
 
+# H3EK tool.exe: linker 14.16 / MSVC v141. Use a Visual Studio CMake generator with toolset v141 (not the VS 2017 IDE).
+# Visual Studio Installer → Individual components → MSVC v141 - VS 2017 C++ x64/x86 build tools (add-on for VS 2022+).
+set(CMAKE_GENERATOR_TOOLSET "v141" CACHE STRING "Required: v141 (H3EK tool.exe)" FORCE)
+
 project(tool_hook_harness LANGUAGES CXX)
 enable_testing()
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT run_tool_hook_tests)
+
+# tool.exe is Release /MD. If tool_hook used /MDd in Debug, std::map nodes allocated in the DLL
+# would live on a different heap than tool causing heap corruption.
+if(MSVC)
+	cmake_policy(SET CMP0091 NEW)
+	set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -102,6 +113,7 @@ add_library(tool_hook SHARED
     hookdll/hooks.h
     source/cache/cache_file_builder_tag_resource_manager.cpp
     source/cache/cache_file_builder_tag_resource_manager.h
+    source/cache/cache_file_builder_writer.h
     source/cseries/cseries_asserts.cpp
     source/cseries/cseries_asserts.h
     source/memory/array.cpp
@@ -112,6 +124,7 @@ add_library(tool_hook SHARED
     source/memory/module.h
     source/memory/wrapped_arrays.cpp
     source/memory/wrapped_arrays.h
+    source/tag_files/tag_group_access.h
     source/tag_files/tag_groups.cpp
     source/tag_files/tag_groups.h
     source/tag_files/tag_resource_internals.cpp

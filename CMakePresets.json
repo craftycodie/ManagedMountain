@@ -1,0 +1,26 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "vs2022-x64-v141",
+      "displayName": "Visual Studio x64 v141 (H3EK)",
+      "description": "MSVC v141 (14.16) to match H3EK tool.exe. Requires VS 2022+ with the v141 optional component; CMake generator name may be 17 2022 or 18 2026.",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "toolset": "v141",
+      "binaryDir": "${sourceDir}/build"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "vs2022-x64-v141-debug",
+      "configurePreset": "vs2022-x64-v141",
+      "configuration": "Debug"
+    },
+    {
+      "name": "vs2022-x64-v141-release",
+      "configurePreset": "vs2022-x64-v141",
+      "configuration": "Release"
+    }
+  ]
+}

@@ -4,7 +4,6 @@
 
 /* ---------- headers */
 
-#include <cstdint>
 #include "cseries/types.h"
 
 /* ---------- constants */

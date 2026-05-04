@@ -12,21 +12,22 @@
 #include "memory/bitvector.h"
 #include "memory/module.h"
 #include "tag_files/tag_groups.h"
+#include "tag_files/tag_group_access.h"
 #include "tag_files/tag_resource_internals.h"
 
-#include <bit>
 #include <cstddef>
-#include <cstdint>
+#include <cstring>
 #include <sstream>
 #include <map>
 
 /* ---------- constants */
 
+// TODO: Tidy
 struct s_cache_file_tag_zone_manifest;
 constexpr uns32 k_tag_resource_definition_table_rva =
 	static_cast<uns32>(0x15877A5D0ull - 0x140000000ull);
 
-static uns64* resource_definitions_base = reinterpret_cast<uns64*>(global_address_get(k_tag_resource_definition_table_rva));
+static uns64& resource_definitions_base = *reinterpret_cast<uns64*>(global_address_get(k_tag_resource_definition_table_rva));
 
 /* ---------- prototypes */
 
@@ -35,37 +36,26 @@ bool __fastcall add_resource_usage_to_zone_manifest(
 	int builder_manifest_index,
 	s_cache_file_tag_zone_manifest* zone_manifest,
 	int resources_count,
-	unsigned int maximum_tag_instances_count);
+	uns32 maximum_tag_instances_count);
 
 /* ---------- hooks */
 
 HOOK_DECLARE(0x1408EA960ull, build_cache_file_add_tag_resources);
 HOOK_DECLARE(0x1408F5560ull, add_resource_usage_to_zone_manifest);
 HOOK_DECLARE(0x1408F7750ull, build_zone_manifest_resource_usage);
+HOOK_DECLARE(0x1408F3610ull, get_or_create_shared_file_index);
 
 /* ---------- definitions */
 
 struct s_cache_file_tag_resources_bitvector
 {
-	std::uint32_t bits;
-};
-
-struct s_attachment_hierarchy_tree_node
-{
-	s_attachment_hierarchy_tree_node* left;
-	s_attachment_hierarchy_tree_node* parent;
-	s_attachment_hierarchy_tree_node* right;
-	std::uint8_t unknown18;
-	std::uint8_t is_nil;
-	std::uint8_t unknown1A[2];
-	int key;
-	std::uint16_t value;
+	uns32 bits;
 };
 
 struct s_attachment_hierarchy_entry
 {
-	std::uint16_t index;
-	std::uint16_t unknown2;
+	uns16 index;
+	uns16 unknown2;
 	s_tag_block children;
 };
 
@@ -90,8 +80,8 @@ struct s_cache_file_tag_zone_manifest
 // Makes the map the correct size.
 struct s_builder_manifest
 {
-	std::uint32_t name;
-	std::uint32_t unknown4;
+	uns32 name;
+	uns32 unknown4;
 	dynamic_array active_resource_owners;
 	dynamic_array tag_resources;
 	dynamic_array cleared_resources;
@@ -100,7 +90,6 @@ struct s_builder_manifest
 };
 
 static_assert(sizeof(s_cache_file_tag_zone_manifest) == k_cache_file_tag_zone_manifest_element_bytes);
-static_assert(sizeof(s_in_out_used_resources) == 2 + 4 + (sizeof(std::uint32_t) * k_in_out_used_resources_dword_count));
 
 /* ---------- prototypes */
 
@@ -163,6 +152,101 @@ bool __fastcall build_cache_file_add_tag_resources(
 	return result;
 }
 
+int32 __fastcall get_or_create_shared_file_index(
+	s_unknown_struct_shared_file_cache& context,
+	s_tag_resource_cache_file_location* location,
+	uns32 key)
+{
+	// std::ostringstream before_stream;
+	// before_stream
+	// 	<< "get_or_create_shared_file_index begin"
+	// 	<< " context=" << static_cast<void*>(&context)
+	// 	<< " location=" << static_cast<void*>(location)
+	// 	<< " key=0x" << std::hex << key << std::dec;
+	// logging::Log(before_stream.str());
+
+	// ===============================================
+
+	auto const it = context.m_shared_file_index_cache.find(key);
+	if (it != context.m_shared_file_index_cache.end())
+	{
+		return it->second;
+	}
+
+	int32 index = -1;
+
+	char buffer[512] = {};
+	char const* built_path =
+		context.m_writer->vftable->build_path(context.m_writer, buffer, 1);
+
+
+	s_cache_file_resource_gestalt* zone =
+		TAG_GET('zone', s_cache_file_resource_gestalt, context.m_zone_tag_index);
+	s_tag_block* const zone_shared_files_block = reinterpret_cast<s_tag_block*>(&zone->shared_files);
+
+	if (std::strcmp(location->dvd_relative_path, built_path) != 0)
+	{
+		int const new_index = tag_block_add_element(zone_shared_files_block);
+
+		assert(VALID_INDEX(new_index, zone_shared_files_block->count));
+
+		auto* const shared_files = reinterpret_cast<s_cache_file_resource_shared_file*>(
+			tag_block_get_range_with_size(
+				zone_shared_files_block,
+				0,
+				zone_shared_files_block->count,
+				static_cast<int>(sizeof(s_cache_file_resource_shared_file))));
+
+		index = new_index;
+
+		csmemset(&shared_files[index], 0, sizeof(s_cache_file_resource_shared_file));
+		csstrnzcpy(
+			reinterpret_cast<char*>(&shared_files[index].file_name),
+			location->dvd_relative_path,
+			sizeof(shared_files[index].file_name));
+		shared_files[index].global_location_index_offset =
+			static_cast<int16>(location->global_shared_location_offset);
+		shared_files[index].io_offset = static_cast<uns32>(location->io_offset);
+	}
+	else
+	{
+		assert(location->io_offset == 0);
+
+		s_cache_file_resource_shared_file* const shared_files = reinterpret_cast<s_cache_file_resource_shared_file*>(
+			tag_block_get_range_with_size(
+				zone_shared_files_block,
+				0,
+				zone_shared_files_block->count,
+				static_cast<int>(sizeof(s_cache_file_resource_shared_file))));
+				
+		index = -1;
+
+		for (int i = 0; i < zone_shared_files_block->count; ++i)
+		{
+			if (std::strcmp(shared_files[i].file_name.get_string(), location->dvd_relative_path) == 0)
+			{
+				index = i;
+				break;
+			}
+		}
+	}
+
+	context.m_shared_file_index_cache[key] = index;
+
+	// ===============================================
+
+	// HOOK_INVOKE(index, get_or_create_shared_file_index, context, location, key);
+
+	// ===============================================
+
+	// std::ostringstream after_stream;
+	// after_stream << "get_or_create_shared_file_index end"
+	// 			 << " result=" << index;
+	// logging::Log(after_stream.str());
+
+	return index;
+}
+
 // Adds resource usage to a zone manifest block (bitvectors and attachment hierarchy) and returns a bitvector of used resources.
 // located at 1408F7750 in h3ek
 bool __fastcall build_zone_manifest_resource_usage(
@@ -170,7 +254,7 @@ bool __fastcall build_zone_manifest_resource_usage(
 	dynamic_array* builder_manifests_array,
 	s_tag_block* manifests_tag_block,
 	int resources_count,
-	unsigned int maximum_tag_instances_count)
+	uns32 maximum_tag_instances_count)
 {
 	std::ostringstream before_stream;
 	before_stream
@@ -250,7 +334,7 @@ bool __fastcall add_resource_usage_to_zone_manifest(
 	int builder_manifest_index,
 	s_cache_file_tag_zone_manifest* cache_file_zone,
 	int resources_count,
-	unsigned int maximum_tag_instances_count)
+	uns32 maximum_tag_instances_count)
 {
 	std::ostringstream before_stream;
 	before_stream
@@ -307,7 +391,8 @@ bool __fastcall add_resource_usage_to_zone_manifest(
         }
 
         // 32 -> 64 bit definition pointer logic may be PC/Durango only
-        s_tag_resource_definition* resource_definition = reinterpret_cast<s_tag_resource_definition*>((*resource_definitions_base) + (tag_resource->definition_ptr * 4ull));
+		// TODO: Rewrite to use ptr32_t::GetPtr
+        s_tag_resource_definition* resource_definition = reinterpret_cast<s_tag_resource_definition*>(resource_definitions_base + (tag_resource->definition_ptr * 4ull));
 
         if (resource_definition->required(resource_definition))
         {
@@ -367,7 +452,7 @@ bool __fastcall add_resource_usage_to_zone_manifest(
 		cache_file_zone->top_level_resource_owners.set(owner_index, true);
     }
 
-    auto& attachment_hierarchy_tagblock = cache_file_zone->attachment_hierarchy;
+    s_tag_block& attachment_hierarchy_tagblock = cache_file_zone->attachment_hierarchy;
     std::multimap<uns32, uns16> const& attachment_hierarchy_tree = builder_manifest->attachment_heirarchy_tree;
 
     tag_block_resize(&attachment_hierarchy_tagblock, maximum_tag_instances_count);
@@ -391,6 +476,7 @@ bool __fastcall add_resource_usage_to_zone_manifest(
 
         visit_node->resource_owner_index = resource_index;
 
+		// TODO: Type and comment what this tree actually is
         auto range = attachment_hierarchy_tree.equal_range(resource_handle);
         for (auto current_node = range.first; current_node != range.second; ++current_node)
         {
@@ -398,7 +484,7 @@ bool __fastcall add_resource_usage_to_zone_manifest(
 
             uns32 new_index = static_cast<uns32>(tag_block_add_element(&visit_node->child_node_indices));
 
-            assert(VALID_INDEX(static_cast<int>(new_index), visit_node->child_node_indices.count));
+            assert(VALID_INDEX(static_cast<int>(new_index), visit_node->child_node_indices.count()));
 
             s_cache_file_zone_resource_visit_node_link_block* node_link = &reinterpret_cast<s_cache_file_zone_resource_visit_node_link_block*>(
                 tag_block_get_range_with_size(

@@ -4,11 +4,42 @@
 
 /* ---------- headers */
 
-#include <cstdint>
+#include "cseries/types.h"
 
 /* ---------- constants */
 
 /* ---------- definitions */
+
+struct s_tag_persistent_identifier
+{
+	unsigned long data[4];
+};
+
+struct s_tag_reference
+{
+	unsigned long opaque[4];
+};
+static_assert(sizeof(s_tag_reference) == 16);
+
+struct c_tag_resource_fixup
+{
+	long raw_bits;
+};
+static_assert(sizeof(c_tag_resource_fixup) == 4);
+
+struct s_tag_resource_fixup_location
+{
+	unsigned long address_offset;
+	c_tag_resource_fixup fixup;
+};
+static_assert(sizeof(s_tag_resource_fixup_location) == 8);
+
+struct s_tag_resource_interop_location
+{
+	c_tag_resource_fixup interop_fixup;
+	long interop_type_index;
+};
+static_assert(sizeof(s_tag_resource_interop_location) == 8);
 
 struct s_tag_resource
 {
@@ -18,7 +49,7 @@ struct s_tag_resource
 
 struct s_tag_resource_definition
 {
-  std::uint64_t unknown0;
+  uns64 unknown0;
   int flags;
   int unknownC;
   void* resource_struct_definition;

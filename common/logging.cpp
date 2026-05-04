@@ -1,5 +1,7 @@
 #include "common/logging.h"
 
+#include "source/cseries/types.h"
+
 #include <Windows.h>
 
 #include <array>
@@ -37,7 +39,7 @@ std::string WideToUtf8(std::wstring_view input)
         return {};
     }
 
-    std::string output(static_cast<std::size_t>(required_size), '\0');
+    std::string output(static_cast<uns64>(required_size), '\0');
     WideCharToMultiByte(
         CP_UTF8,
         0,

@@ -2,7 +2,6 @@
 
 #include "cseries/cseries_asserts.h"
 
-#include <cstdint>
 #include <cstdio>
 #include <windows.h>
 #include <detours.h>
@@ -20,8 +19,8 @@ void* global_address_get(uns32 rva)
 
 	ASSERT(global_module.pointer != nullptr);
 
-	const std::uintptr_t base = reinterpret_cast<std::uintptr_t>(global_module.pointer);
-	return reinterpret_cast<byte*>(base + static_cast<std::uintptr_t>(rva));
+	const uns64 base = reinterpret_cast<uns64>(global_module.pointer);
+	return reinterpret_cast<byte*>(base + static_cast<uns64>(rva));
 }
 
 void set_mountain_module(void* module_handle)
@@ -54,14 +53,14 @@ c_data_patch_array* data_patch_arrays[k_maximum_individual_modification_count];
 
 // PE32-style stripping was removed: RVAs >= 0x400000 (common for x64 images) are indistinguishable
 // from 32-bit preferred VAs. Pass raw RVAs with remove_base=false, or use full PE64 VAs (0x1400…).
-static uns32 normalize_hook_target_rva(std::uintptr_t va, bool remove_base)
+static uns32 normalize_hook_target_rva(uns64 va, bool remove_base)
 {
 	if (!remove_base)
 	{
 		return static_cast<uns32>(va);
 	}
 
-	constexpr std::uintptr_t k_pe64_default = 0x140000000ull;
+	constexpr uns64 k_pe64_default = 0x140000000ull;
 
 	if (va >= k_pe64_default)
 	{
@@ -130,10 +129,10 @@ void apply_all_patches(bool revert)
 	}
 }
 
-c_hook::c_hook(const char* name, std::uintptr_t address, module_address const detour, bool remove_base) :
+c_hook::c_hook(const char* name, uns64 address, module_address const detour, bool remove_base) :
 	m_name(name),
 	m_addr(detour),
-	m_orig({ .pointer = static_cast<byte*>(global_address_get(normalize_hook_target_rva(address, remove_base))) })
+	m_orig(module_address_from_pointer(static_cast<byte*>(global_address_get(normalize_hook_target_rva(address, remove_base)))))
 {
 	ASSERT(VALID_COUNT(g_detour_hook_count, k_maximum_individual_modification_count));
 	detour_hooks[g_detour_hook_count++] = this;
@@ -146,8 +145,8 @@ bool c_hook::apply(bool revert)
 		return false;
 	}
 
-	if (reinterpret_cast<std::uintptr_t>(m_orig.pointer) == static_cast<std::uintptr_t>(0xFEFEFEFE)
-		|| reinterpret_cast<std::uintptr_t>(m_addr.pointer) == static_cast<std::uintptr_t>(0xFEFEFEFE))
+	if (reinterpret_cast<uns64>(m_orig.pointer) == static_cast<uns64>(0xFEFEFEFE)
+		|| reinterpret_cast<uns64>(m_addr.pointer) == static_cast<uns64>(0xFEFEFEFE))
 	{
 		return false;
 	}
@@ -184,18 +183,15 @@ bool c_hook::apply(bool revert)
 	return true;
 }
 
-c_hook_call::c_hook_call(const char* name, std::uintptr_t address, module_address const function, bool remove_base) :
+c_hook_call::c_hook_call(const char* name, uns64 address, module_address const function, bool remove_base) :
 	m_name(name),
-	m_addr({ .pointer = static_cast<byte*>(global_address_get(normalize_hook_target_rva(address, remove_base))) }),
+	m_addr(module_address_from_pointer(static_cast<byte*>(global_address_get(normalize_hook_target_rva(address, remove_base))))),
 	m_call(),
 	m_call_original()
 {
-	const std::uintptr_t site = reinterpret_cast<std::uintptr_t>(m_addr.pointer);
-	const std::uintptr_t target = reinterpret_cast<std::uintptr_t>(function.pointer);
-	m_call = call_instruction{
-		.opcode = 0xE8,
-		.offset = static_cast<uns32>(target - site - sizeof(call_instruction)),
-	};
+	const uns64 site = reinterpret_cast<uns64>(m_addr.pointer);
+	const uns64 target = reinterpret_cast<uns64>(function.pointer);
+	m_call = call_instruction{ 0xE8, static_cast<uns32>(target - site - sizeof(call_instruction)) };
 
 	ASSERT(VALID_COUNT(g_call_hook_count, k_maximum_individual_modification_count));
 	call_hooks[g_call_hook_count++] = this;
@@ -208,7 +204,7 @@ bool c_hook_call::apply(bool revert)
 		return false;
 	}
 
-	if (reinterpret_cast<std::uintptr_t>(m_addr.pointer) == static_cast<std::uintptr_t>(0xFEFEFEFE))
+	if (reinterpret_cast<uns64>(m_addr.pointer) == static_cast<uns64>(0xFEFEFEFE))
 	{
 		return false;
 	}
@@ -234,9 +230,9 @@ bool c_hook_call::apply(bool revert)
 	return true;
 }
 
-c_data_patch::c_data_patch(const char* name, std::uintptr_t address, int32 patch_size, byte const(&patch)[], bool remove_base) :
+c_data_patch::c_data_patch(const char* name, uns64 address, int32 patch_size, byte const(&patch)[], bool remove_base) :
 	m_name(name),
-	m_addr({ .pointer = static_cast<byte*>(global_address_get(normalize_hook_target_rva(address, remove_base))) }),
+	m_addr(module_address_from_pointer(static_cast<byte*>(global_address_get(normalize_hook_target_rva(address, remove_base))))),
 	m_byte_count(patch_size),
 	m_bytes(patch),
 	m_bytes_original(new byte[static_cast<size_t>(m_byte_count)]{})
@@ -252,7 +248,7 @@ bool c_data_patch::apply(bool revert)
 		return false;
 	}
 
-	if (reinterpret_cast<std::uintptr_t>(m_addr.pointer) == static_cast<std::uintptr_t>(0xFEFEFEFE))
+	if (reinterpret_cast<uns64>(m_addr.pointer) == static_cast<uns64>(0xFEFEFEFE))
 	{
 		return false;
 	}
@@ -324,7 +320,9 @@ bool c_data_patch_array::apply(bool revert)
 
 		if (!revert)
 		{
-			m_bytes_original[i] = static_cast<byte*>(csmemcpy(new byte[static_cast<size_t>(m_byte_count)]{}, address.pointer, static_cast<size_t>(m_byte_count)));
+			byte* const snapshot = new byte[static_cast<size_t>(m_byte_count)]{};
+			csmemcpy(snapshot, address.pointer, static_cast<size_t>(m_byte_count));
+			m_bytes_original[i] = snapshot;
 		}
 
 		uns32 protect = 0;

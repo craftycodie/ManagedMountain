@@ -7,7 +7,6 @@
 
 #include "cseries/cseries.h"
 
-#include <cstdint>
 #include <sstream>
 
 /* ---------- constants */

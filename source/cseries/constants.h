@@ -2,6 +2,8 @@
 #ifndef __CONSTANTS_H__
 #define __CONSTANTS_H__
 
+#include "cseries/types.h"
+
 /* ---------- constants */
 
 constexpr unsigned char k_unsigned_char_max = 255;
@@ -47,9 +49,9 @@ constexpr long k_hours_per_day = 24;
 constexpr long k_kilo = 1024;
 constexpr long k_meg = 1048576;
 constexpr long k_gig = 1073741824;
-constexpr size_t k_kilo_as_size_t = 1024;
-constexpr size_t k_meg_as_size_t = 1048576;
-constexpr size_t k_gig_as_size_t = 1073741824;
+constexpr uns64 k_kilo_as_size_t = 1024;
+constexpr uns64 k_meg_as_size_t = 1048576;
+constexpr uns64 k_gig_as_size_t = 1073741824;
 
 enum e_none_sentinel
 {
