@@ -41,7 +41,7 @@ struct c_cache_file_tracer;
 struct c_cache_file_builder_tag_resource_output;
 struct c_allocation_base;
 struct dynamic_array;
-struct s_cache_file_tag_zone_manifest;
+struct s_cache_file_zone_manifest;
 class c_wrapped_flags;
 
 struct s_cache_file_zone_resource_visit_node;
@@ -161,7 +161,7 @@ bool __fastcall build_cache_file_add_tag_resources(
 bool __fastcall add_resource_usage_to_zone_manifest(
 	dynamic_array* builder_manifests_array,
 	int builder_manifest_index,
-	s_cache_file_tag_zone_manifest* zone_manifest,
+	s_cache_file_zone_manifest* zone_manifest,
 	int resources_count,
 	uns32 maximum_tag_instances_count);
 

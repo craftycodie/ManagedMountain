@@ -26,7 +26,7 @@
 bool __fastcall add_resource_usage_to_zone_manifest(
 	dynamic_array* builder_manifests_array,
 	int builder_manifest_index,
-	s_cache_file_tag_zone_manifest* zone_manifest,
+	s_cache_file_zone_manifest* zone_manifest,
 	int resources_count,
 	uns32 maximum_tag_instances_count);
 
@@ -55,24 +55,6 @@ struct s_attachment_hierarchy_entry
 	s_tag_block children;
 };
 
-struct s_cache_file_tag_zone_manifest
-{
-	c_tag_block_bit_vector required_resource_bitvector;
-	c_tag_block_bit_vector deferred_resource_bitvector;
-	c_tag_block_bit_vector optional_resource_bitvector;
-	c_tag_block_bit_vector streamed_resource_bitvector;
-	int required_resource_size;
-	int deferred_required_size;
-	int optional_resource_size;
-	int streamed_resource_size;
-	int dvd_in_memory_resource_size;
-	int name;
-	s_tag_block resource_usage;
-	c_tag_block_bit_vector active_resource_owners;
-	c_tag_block_bit_vector top_level_resource_owners;
-	s_tag_block attachment_hierarchy;
-};
-
 // Makes the map the correct size.
 struct s_builder_manifest
 {
@@ -85,7 +67,7 @@ struct s_builder_manifest
     std::multimap<uns32, uns16> attachment_heirarchy_tree;
 };
 
-static_assert(sizeof(s_cache_file_tag_zone_manifest) == k_cache_file_tag_zone_manifest_element_bytes);
+static_assert(sizeof(s_cache_file_zone_manifest) == k_cache_file_tag_zone_manifest_element_bytes);
 
 /* ---------- prototypes */
 
@@ -542,19 +524,19 @@ bool __fastcall build_zone_manifest_resource_usage(
 
 	tag_block_resize(manifests_tag_block, builder_manifests_array->count);
 
-	s_cache_file_tag_zone_manifest* const zone_manifests = reinterpret_cast<s_cache_file_tag_zone_manifest*>(
+	s_cache_file_zone_manifest* const zone_manifests = reinterpret_cast<s_cache_file_zone_manifest*>(
 		tag_block_get_range_with_size(
 			manifests_tag_block,
 			0,
 			manifests_tag_block->count,
-			sizeof(s_cache_file_tag_zone_manifest)));
+			sizeof(s_cache_file_zone_manifest)));
 
 	for (int builder_manifest_index = 0; builder_manifest_index < builder_manifests_array->count; ++builder_manifest_index)
 	{
 		int const manifests_count = manifests_tag_block->count;
 		ASSERT(VALID_INDEX(builder_manifest_index, manifests_count));
 
-		s_cache_file_tag_zone_manifest* cache_file_zone = &zone_manifests[builder_manifest_index];
+		s_cache_file_zone_manifest* cache_file_zone = &zone_manifests[builder_manifest_index];
 
 		bool const zone_manifest_populated = add_resource_usage_to_zone_manifest(
 			builder_manifests_array,
@@ -570,23 +552,23 @@ bool __fastcall build_zone_manifest_resource_usage(
 
 		// not entirely sure why we only assert the bit vector is large enough ONLY for required resources.
 		// maybe because optional & streamed are ok if not populated.
-		ASSERT(in_out_used_resources->bit_count() >= cache_file_zone->required_resource_bitvector.bit_count());
+		ASSERT(in_out_used_resources->bit_count() >= cache_file_zone->required_resources_bitvector.bit_count());
 
 		bit_vector_not_and(
-			cache_file_zone->required_resource_bitvector.bit_count(),
-			cache_file_zone->required_resource_bitvector.get_bits(),
+			cache_file_zone->required_resources_bitvector.bit_count(),
+			cache_file_zone->required_resources_bitvector.get_bits(),
 			in_out_used_resources->get_bits_unsafe(),
 			in_out_used_resources->get_bits_unsafe());
 
 		bit_vector_not_and(
-			cache_file_zone->optional_resource_bitvector.bit_count(),
-			cache_file_zone->optional_resource_bitvector.get_bits(),
+			cache_file_zone->optional_resources_bitvector.bit_count(),
+			cache_file_zone->optional_resources_bitvector.get_bits(),
 			in_out_used_resources->get_bits_unsafe(),
 			in_out_used_resources->get_bits_unsafe());
 
 		bit_vector_not_and(
-			cache_file_zone->streamed_resource_bitvector.bit_count(),
-			cache_file_zone->streamed_resource_bitvector.get_bits(),
+			cache_file_zone->streamed_resources_bitvector.bit_count(),
+			cache_file_zone->streamed_resources_bitvector.get_bits(),
 			in_out_used_resources->get_bits_unsafe(),
 			in_out_used_resources->get_bits_unsafe());
 	}
@@ -604,7 +586,7 @@ bool __fastcall build_zone_manifest_resource_usage(
 bool __fastcall add_resource_usage_to_zone_manifest(
 	dynamic_array* builder_manifests_array,
 	int builder_manifest_index,
-	s_cache_file_tag_zone_manifest* cache_file_zone,
+	s_cache_file_zone_manifest* cache_file_zone,
 	int resources_count,
 	uns32 maximum_tag_instances_count)
 {
@@ -634,13 +616,13 @@ bool __fastcall add_resource_usage_to_zone_manifest(
     s_builder_manifest* builder_manifest = static_cast<s_builder_manifest*>(
         dynamic_array_get_element(builder_manifests_array, builder_manifest_index, sizeof(s_builder_manifest)));
 
-	cache_file_zone->required_resource_bitvector.resize_in_bits(resources_count);
-	cache_file_zone->optional_resource_bitvector.resize_in_bits(resources_count);
-	cache_file_zone->streamed_resource_bitvector.resize_in_bits(resources_count);
+	cache_file_zone->required_resources_bitvector.resize_in_bits(resources_count);
+	cache_file_zone->optional_resources_bitvector.resize_in_bits(resources_count);
+	cache_file_zone->streamed_resources_bitvector.resize_in_bits(resources_count);
 
-	cache_file_zone->required_resource_bitvector.clear();
-	cache_file_zone->optional_resource_bitvector.clear();
-	cache_file_zone->streamed_resource_bitvector.clear();
+	cache_file_zone->required_resources_bitvector.clear();
+	cache_file_zone->optional_resources_bitvector.clear();
+	cache_file_zone->streamed_resources_bitvector.clear();
 
     cache_file_zone->name = builder_manifest->name;
 
@@ -666,17 +648,17 @@ bool __fastcall add_resource_usage_to_zone_manifest(
 
         if (resource_definition->required())
         {
-			cache_file_zone->required_resource_bitvector.set(resource_index, true);
+			cache_file_zone->required_resources_bitvector.set(resource_index, true);
         }
 
         if (resource_definition->optional())
         {
-			cache_file_zone->optional_resource_bitvector.set(resource_index, true);
+			cache_file_zone->optional_resources_bitvector.set(resource_index, true);
         }
 
         if (resource_definition->streamed())
         {
-			cache_file_zone->streamed_resource_bitvector.set(resource_index, true);
+			cache_file_zone->streamed_resources_bitvector.set(resource_index, true);
         }  
     }
 
@@ -693,9 +675,9 @@ bool __fastcall add_resource_usage_to_zone_manifest(
         const uns32 resource_handle = cleared_resource->resource_handle;
         const uns16 resource_index = static_cast<uns16>(resource_handle);
 
-		cache_file_zone->required_resource_bitvector.set(resource_index, false);
-		cache_file_zone->optional_resource_bitvector.set(resource_index, false);
-		cache_file_zone->streamed_resource_bitvector.set(resource_index, false);
+		cache_file_zone->required_resources_bitvector.set(resource_index, false);
+		cache_file_zone->optional_resources_bitvector.set(resource_index, false);
+		cache_file_zone->streamed_resources_bitvector.set(resource_index, false);
     }
 
 	cache_file_zone->active_resource_owners.resize_in_bits(maximum_tag_instances_count);
@@ -722,7 +704,7 @@ bool __fastcall add_resource_usage_to_zone_manifest(
 		cache_file_zone->top_level_resource_owners.set(owner_index, true);
     }
 
-    s_tag_block& attachment_hierarchy_tagblock = cache_file_zone->attachment_hierarchy;
+    s_tag_block& attachment_hierarchy_tagblock = *reinterpret_cast<s_tag_block*>(&cache_file_zone->visitation_hierarchy);
     std::multimap<uns32, uns16> const& attachment_hierarchy_tree = builder_manifest->attachment_heirarchy_tree;
 
     tag_block_resize(&attachment_hierarchy_tagblock, maximum_tag_instances_count);
