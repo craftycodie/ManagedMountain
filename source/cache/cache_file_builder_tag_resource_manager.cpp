@@ -35,9 +35,11 @@ bool __fastcall add_resource_usage_to_zone_manifest(
 HOOK_DECLARE(0x1408EA960ull, build_cache_file_add_tag_resources);
 HOOK_DECLARE(0x1408F5560ull, add_resource_usage_to_zone_manifest);
 HOOK_DECLARE(0x1408F7750ull, build_zone_manifest_resource_usage);
+HOOK_DECLARE(0x1408F3350ull, add_or_get_file_location);
 HOOK_DECLARE(0x1408F3610ull, get_or_create_shared_file_index);
 HOOK_DECLARE(0x1408F2E30ull, get_or_create_codec_definition_index);
 HOOK_DECLARE(0x1408F7B30ull, build_resource_streaming_sublocation_table);
+HOOK_DECLARE(0x1408F78F0ull, build_and_assign_pageable_resource_location);
 
 /* ---------- definitions */
 
@@ -146,11 +148,65 @@ bool __fastcall build_cache_file_add_tag_resources(
 	return result;
 }
 
+// TODO: Tidy
+int32 __fastcall add_or_get_file_location(
+	s_cache_file_resource_gestalt* resource_gestalt,
+	s_cache_file_resource_file_location* resource_file_location)
+{
+	s_tag_block* const file_locations_block = reinterpret_cast<s_tag_block*>(&resource_gestalt->file_locations);
+	int32 file_location_index = 0;
+
+	if (resource_file_location->memory_size != 0)
+	{
+		int const new_index = tag_block_add_element(file_locations_block);
+		ASSERT(VALID_INDEX(new_index, file_locations_block->count));
+		file_location_index = new_index;
+
+		s_cache_file_resource_file_location file_location_copy = *resource_file_location;
+
+		s_cache_file_resource_file_location* const file_locations =
+			reinterpret_cast<s_cache_file_resource_file_location*>(tag_block_get_range_with_size(
+				file_locations_block,
+				0,
+				file_locations_block->count,
+				static_cast<int>(sizeof(s_cache_file_resource_file_location))));
+
+		file_locations[file_location_index] = file_location_copy;
+		ASSERT(file_locations[file_location_index].resource_reference_count == 0);
+	}
+	else
+	{
+		ASSERT(VALID_INDEX(file_location_index, file_locations_block->count));
+
+		s_cache_file_resource_file_location* const file_locations =
+			reinterpret_cast<s_cache_file_resource_file_location*>(tag_block_get_range_with_size(
+				file_locations_block,
+				0,
+				file_locations_block->count,
+				static_cast<int>(sizeof(s_cache_file_resource_file_location))));
+
+		ASSERT(file_locations[file_location_index].memory_size == 0);
+	}
+
+	s_cache_file_resource_file_location* const file_locations =
+		reinterpret_cast<s_cache_file_resource_file_location*>(tag_block_get_range_with_size(
+			file_locations_block,
+			0,
+			file_locations_block->count,
+			static_cast<int>(sizeof(s_cache_file_resource_file_location))));
+	++file_locations[file_location_index].resource_reference_count;
+
+	return file_location_index;
+}
+
+
+
 int32 __fastcall get_or_create_shared_file_index(
 	s_unknown_struct_shared_file_cache& context,
 	s_tag_resource_cache_file_location* location,
 	uns32 key)
 {
+	s_tag_resource_cache_file_config* io_config = &location->io_config;
 	// std::ostringstream before_stream;
 	// before_stream
 	// 	<< "get_or_create_shared_file_index begin"
@@ -178,7 +234,7 @@ int32 __fastcall get_or_create_shared_file_index(
 		TAG_GET('zone', s_cache_file_resource_gestalt, context.m_zone_tag_index);
 	s_tag_block* const zone_shared_files_block = reinterpret_cast<s_tag_block*>(&zone->shared_files);
 
-	if (std::strcmp(location->dvd_relative_path, built_path) != 0)
+	if (std::strcmp(io_config->path, built_path) != 0)
 	{
 		int const new_index = tag_block_add_element(zone_shared_files_block);
 
@@ -196,15 +252,15 @@ int32 __fastcall get_or_create_shared_file_index(
 		csmemset(&shared_files[index], 0, sizeof(s_cache_file_resource_shared_file));
 		csstrnzcpy(
 			reinterpret_cast<char*>(&shared_files[index].file_name),
-			location->dvd_relative_path,
+			io_config->path,
 			sizeof(shared_files[index].file_name));
 		shared_files[index].global_location_index_offset =
-			static_cast<int16>(location->global_shared_location_offset);
-		shared_files[index].io_offset = static_cast<uns32>(location->io_offset);
+			static_cast<int16>(io_config->io_offset);
+		shared_files[index].io_offset = static_cast<uns32>(location->file_offset);
 	}
 	else
 	{
-		assert(location->io_offset == 0);
+		assert(io_config->io_offset == 0);
 
 		s_cache_file_resource_shared_file* const shared_files = reinterpret_cast<s_cache_file_resource_shared_file*>(
 			tag_block_get_range_with_size(
@@ -217,7 +273,7 @@ int32 __fastcall get_or_create_shared_file_index(
 
 		for (int i = 0; i < zone_shared_files_block->count; ++i)
 		{
-			if (std::strcmp(shared_files[i].file_name.get_string(), location->dvd_relative_path) == 0)
+			if (std::strcmp(shared_files[i].file_name.get_string(), io_config->path) == 0)
 			{
 				index = i;
 				break;
@@ -369,6 +425,98 @@ uns32 __fastcall build_resource_streaming_sublocation_table(
 	}
 
 	return static_cast<uns32>(table_index);
+}
+
+// TODO: Tidy, document
+char __fastcall build_and_assign_pageable_resource_location(
+	s_unknown_struct_shared_file_cache* context,
+	s_cache_file_resource_gestalt* resource_gestalt,
+	int owner_tag_index,
+	uns32 resource_index,
+	s_tag_resource_definition* resource_definition,
+	c_tag_file_backend_resource_cache_file_datum_handler_simple* cache_datum_handler,
+	s_cache_file_tag_resource_data* resource_data)
+{
+	ASSERT(resource_data->location_index != NONE);
+
+	s_cache_file_resource_file_location pageable_location{};
+	pageable_location.codec_index = static_cast<char>(NONE);
+	pageable_location.shared_file_index = static_cast<int16>(NONE);
+	pageable_location.file_offset = static_cast<uns32>(NONE);
+	pageable_location.streaming_sublocation_table_index = static_cast<int16>(NONE);
+
+	if (cache_datum_handler->vftable->any_pageable_data(cache_datum_handler, resource_index))
+	{
+		s_tag_resource_cache_file_location cache_location{};
+		cache_location.io_config.path[0] = '\0';
+
+		if (!cache_datum_handler->vftable->describe_resource_cache_location(cache_datum_handler, resource_index, 0, &cache_location))
+		{
+			return false;
+		}
+
+		pageable_location.shared_file_index = static_cast<int16>(
+			get_or_create_shared_file_index(
+				*context,
+				&cache_location,
+				static_cast<uns32>(cache_location.indirect_file.file_index)));
+		pageable_location.memory_size = cache_datum_handler->vftable->get_pageable_memory_size(cache_datum_handler, resource_index);
+		pageable_location.file_offset = static_cast<uns32>(cache_location.file_offset);
+		pageable_location.file_size = static_cast<uns32>(cache_location.location_size);
+
+		get_or_create_codec_definition_index(resource_gestalt, cache_location.codec, &pageable_location.codec_index);
+		if (cache_datum_handler->vftable->try_to_get_pageable_checksum(
+			cache_datum_handler,
+			resource_index,
+			&pageable_location.checksum))
+		{
+			*reinterpret_cast<unsigned char*>(&pageable_location.flags) |=
+				static_cast<unsigned char>(FLAG(_cache_file_location_all_checksums_valid_bit));
+		}
+
+		pageable_location.streaming_sublocation_table_index = static_cast<int16>(
+			build_resource_streaming_sublocation_table(
+				resource_gestalt,
+				static_cast<uns32>(owner_tag_index),
+				resource_index,
+				resource_definition));
+
+		if (pageable_location.streaming_sublocation_table_index != NONE)
+		{
+			s_tag_block* const tables_block = reinterpret_cast<s_tag_block*>(&resource_gestalt->streaming_sublocation_tables);
+			ASSERT(VALID_INDEX(pageable_location.streaming_sublocation_table_index, tables_block->count));
+
+			s_cache_file_resource_streaming_sublocation_table* const table_rows =
+				reinterpret_cast<s_cache_file_resource_streaming_sublocation_table*>(tag_block_get_range_with_size(
+					tables_block,
+					0,
+					tables_block->count,
+					static_cast<int>(sizeof(s_cache_file_resource_streaming_sublocation_table))));
+
+			if (table_rows[pageable_location.streaming_sublocation_table_index].total_memory_size == 0)
+			{
+				*reinterpret_cast<unsigned short*>(&resource_data->flags) &=
+					static_cast<unsigned short>(~FLAG(_cache_file_resource_has_pageable_data_bit));
+			}
+		}
+	}
+
+	int32 const pageable_location_index = add_or_get_file_location(resource_gestalt, &pageable_location);
+	ASSERT(pageable_location_index != NONE);
+
+	s_tag_block* const default_locations_block = reinterpret_cast<s_tag_block*>(&resource_gestalt->default_locations);
+	ASSERT(VALID_INDEX(resource_data->location_index, default_locations_block->count));
+
+	s_cache_file_resource_sections_location* const default_locations =
+		reinterpret_cast<s_cache_file_resource_sections_location*>(tag_block_get_range_with_size(
+			default_locations_block,
+			0,
+			default_locations_block->count,
+			static_cast<int>(sizeof(s_cache_file_resource_sections_location))));
+	default_locations[resource_data->location_index].pageable_file_location_index =
+		static_cast<int16>(pageable_location_index);
+
+	return true;
 }
 
 // Adds resource usage to a zone manifest block (bitvectors and attachment hierarchy) and returns a bitvector of used resources.
