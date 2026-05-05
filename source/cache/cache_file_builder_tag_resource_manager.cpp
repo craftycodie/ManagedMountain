@@ -17,17 +17,9 @@
 
 #include <cstddef>
 #include <cstring>
-#include <sstream>
+#include <algorithm>
 #include <map>
-
-/* ---------- constants */
-
-// TODO: Tidy
-struct s_cache_file_tag_zone_manifest;
-constexpr uns32 k_tag_resource_definition_table_rva =
-	static_cast<uns32>(0x15877A5D0ull - 0x140000000ull);
-
-static uns64& resource_definitions_base = *reinterpret_cast<uns64*>(global_address_get(k_tag_resource_definition_table_rva));
+#include <sstream>
 
 /* ---------- prototypes */
 
@@ -45,6 +37,7 @@ HOOK_DECLARE(0x1408F5560ull, add_resource_usage_to_zone_manifest);
 HOOK_DECLARE(0x1408F7750ull, build_zone_manifest_resource_usage);
 HOOK_DECLARE(0x1408F3610ull, get_or_create_shared_file_index);
 HOOK_DECLARE(0x1408F2E30ull, get_or_create_codec_definition_index);
+HOOK_DECLARE(0x1408F7B30ull, build_resource_streaming_sublocation_table);
 
 /* ---------- definitions */
 
@@ -303,6 +296,81 @@ void __fastcall get_or_create_codec_definition_index(
 	*out_codec_index = static_cast<int8>(new_index);
 }
 
+using streaming_sublocation_sort_row = s_cache_file_resource_streaming_sublocation;
+
+// H3EK 0x1408F7B30 (IDA `build_resource_streaming_sublocation_table_sub_1408F7B30`).
+uns32 __fastcall build_resource_streaming_sublocation_table(
+	s_cache_file_resource_gestalt* resource_gestalt,
+	uns32 owner_tag_index,
+	uns32 resource_index,
+	s_tag_resource_definition* resource_definition)
+{
+	if (!resource_definition->streamed())
+	{
+		return 0xFFFFu;
+	}
+
+	c_tag_resource_vtable_interface* const resource_vtable = resource_definition->resource_vtable;
+	if (resource_vtable == nullptr || !resource_vtable->has_get_resource_streaming_sublocations_proc())
+	{
+		return 0xFFFFu;
+	}
+
+	ASSERT(owner_tag_index != static_cast<uns32>(-1));
+
+	s_tag_block* const tables_block = reinterpret_cast<s_tag_block*>(&resource_gestalt->streaming_sublocation_tables);
+	int const new_table_index = tag_block_add_element(tables_block);
+	ASSERT(VALID_INDEX(new_table_index, tables_block->count));
+
+	uns16 const table_index = static_cast<uns16>(static_cast<unsigned>(new_table_index));
+
+	s_cache_file_resource_streaming_sublocation_table* const table_rows =
+		reinterpret_cast<s_cache_file_resource_streaming_sublocation_table*>(tag_block_get_range_with_size(
+			tables_block,
+			0,
+			tables_block->count,
+			static_cast<int>(sizeof(s_cache_file_resource_streaming_sublocation_table))));
+
+	s_cache_file_resource_streaming_sublocation_table* const new_row = &table_rows[new_table_index];
+
+	c_output_stream<s_tag_resource_streaming_sublocation> primary_stream{
+		reinterpret_cast<s_tag_block*>(&new_row->stream_locations)};
+	c_null_output_stream<s_tag_resource_streaming_sublocation> null_stream{};
+
+	resource_vtable->get_resource_streaming_sublocations_thunk(
+		static_cast<long>(static_cast<unsigned long>(owner_tag_index)),
+		static_cast<long>(static_cast<unsigned long>(resource_index)),
+		&primary_stream,
+		&null_stream);
+
+	s_tag_block* const stream_block = reinterpret_cast<s_tag_block*>(&new_row->stream_locations);
+	if (stream_block->count <= 0)
+	{
+		tag_block_resize(tables_block, tables_block->count - 1);
+		return 0xFFFFu;
+	}
+
+	int const row_count = stream_block->count;
+	streaming_sublocation_sort_row* const sort_begin = reinterpret_cast<streaming_sublocation_sort_row*>(
+		tag_block_get_range_with_size(stream_block, 0, row_count, static_cast<int>(sizeof(streaming_sublocation_sort_row))));
+	streaming_sublocation_sort_row* const sort_end = sort_begin + row_count;
+	std::sort(
+		sort_begin,
+		sort_end,
+		[](streaming_sublocation_sort_row const& a, streaming_sublocation_sort_row const& b) {
+			return a.memory_offset < b.memory_offset;
+		});
+
+	new_row->total_memory_size = 0;
+	for (int i = 0; i < row_count; ++i)
+	{
+		ASSERT(VALID_INDEX(i, row_count));
+		new_row->total_memory_size += static_cast<unsigned long>(static_cast<unsigned int>(sort_begin[i].memory_size));
+	}
+
+	return static_cast<uns32>(table_index);
+}
+
 // Adds resource usage to a zone manifest block (bitvectors and attachment hierarchy) and returns a bitvector of used resources.
 // located at 1408F7750 in h3ek
 bool __fastcall build_zone_manifest_resource_usage(
@@ -438,29 +506,27 @@ bool __fastcall add_resource_usage_to_zone_manifest(
 
         const uns32 resource_handle = tag_resource->resource_handle;
         const uns16 resource_index = static_cast<uns16>(resource_handle);
-        const uns32 definition_ptr = tag_resource->definition_ptr;
+        uns32 const definition_compressed = tag_resource->definition_ptr.GetCompressed();
 
-        ASSERT(definition_ptr != NONE);
-        if (definition_ptr == NULL)
+        ASSERT(definition_compressed != static_cast<uns32>(NONE));
+        if (definition_compressed == 0)
         {
             continue;
         }
 
-        // 32 -> 64 bit definition pointer logic may be PC/Durango only
-		// TODO: Rewrite to use ptr32_t::GetPtr
-        s_tag_resource_definition* resource_definition = reinterpret_cast<s_tag_resource_definition*>(resource_definitions_base + (tag_resource->definition_ptr * 4ull));
+        s_tag_resource_definition* resource_definition = tag_resource->definition_ptr.GetPtr();
 
-        if (resource_definition->required(resource_definition))
+        if (resource_definition->required())
         {
 			cache_file_zone->required_resource_bitvector.set(resource_index, true);
         }
 
-        if (resource_definition->optional(resource_definition))
+        if (resource_definition->optional())
         {
 			cache_file_zone->optional_resource_bitvector.set(resource_index, true);
         }
 
-        if (resource_definition->streamed(resource_definition))
+        if (resource_definition->streamed())
         {
 			cache_file_zone->streamed_resource_bitvector.set(resource_index, true);
         }  

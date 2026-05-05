@@ -113,10 +113,15 @@ add_library(tool_hook SHARED
     hookdll/hooks.h
     source/cache/cache_file_builder_tag_resource_manager.cpp
     source/cache/cache_file_builder_tag_resource_manager.h
+    source/cache/physical_memory_map.h
+    source/cache/tag_resource_streaming_output_stream.cpp
+    source/cache/tag_resource_streaming_output_stream.h
     source/cache/cache_file_builder_writer.h
     source/cache/cache_file_uncompressed_codec.h
     source/cseries/cseries_asserts.cpp
     source/cseries/cseries_asserts.h
+    source/cseries/port_64.cpp
+    source/cseries/port_64.h
     source/memory/array.cpp
     source/memory/array.h
     source/memory/bitvector.cpp
@@ -130,6 +135,7 @@ add_library(tool_hook SHARED
     source/tag_files/tag_groups.h
     source/tag_files/tag_resource_internals.cpp
     source/tag_files/tag_resource_internals.h
+    source/tag_files/tag_group_definitions.h
 )
 
 target_link_libraries(tool_hook PRIVATE

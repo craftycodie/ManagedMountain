@@ -122,6 +122,14 @@ struct s_cache_file_resource_sections_location
 };
 static_assert(sizeof(s_cache_file_resource_sections_location) == 16);
 
+// H3EK gestalt streaming table row (IDB `s_cache_file_resource_streaming_sublocation`); tag_block uses element_size 8 when sorting.
+struct s_cache_file_resource_streaming_sublocation
+{
+	int memory_offset;
+	int memory_size;
+};
+static_assert(sizeof(s_cache_file_resource_streaming_sublocation) == 8);
+
 struct s_cache_file_resource_streaming_sublocation_table
 {
 	unsigned long total_memory_size; // 0x0
